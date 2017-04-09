@@ -97,8 +97,10 @@ export class IndentSpy {
             this._hoverConf = {
                 peekBack: config.get('hover.peekBack', 1),
                 peekForward: config.get('hover.peekForward', 0),
-                trimLinesShorterThan: config.get('hover.trimLinesShorterThan', 2),
-                peekBlockPlaceholder: config.get('hover.peekBlockPlaceholder', '...')
+                trimLinesShorterThan: config.get(
+                    'hover.trimLinesShorterThan', 2),
+                peekBlockPlaceholder: config.get(
+                    'hover.peekBlockPlaceholder', '...')
             };
         } else if (this._hoverProvider) {
             this._hoverProvider.dispose();
@@ -141,7 +143,6 @@ export class IndentSpy {
                                                              selection,
                                                              selectedIndent,
                                                              tabSize)
-        console.log(activeIndentRanges.length, this._showHover);
         if(this._showHover && activeIndentRanges.length >= this._showHover) {
             this._buildHover(editor, tabSize);
         } else if(this._hoverProvider) {
@@ -160,36 +161,73 @@ export class IndentSpy {
     }
 
     _buildHover(editor: TextEditor, tabSize: number) {
-        if (this._hoverProvider) this._hoverProvider.dispose();
-            this._hoverProvider = languages.registerHoverProvider(editor.document.languageId, {
+        if (this._hoverProvider) {
+            this._hoverProvider.dispose();
+        }
+        this._hoverProvider = languages.registerHoverProvider(
+            editor.document.languageId,
+            {
                 provideHover: (doc, position) => {
-                    let char = this._rangeAtThisLineMaker.start.character
-                    if (position.character > char -2 && position.character < char +2
-                        && position.line > this._firstLine && position.line < this._lastLine) {
-                        return {
-                            range: this._rangeAtThisLineMaker,
-                            contents: [
-                                { language: editor.document.languageId, value: this._buildHoverString(editor, tabSize) }
-                            ]
-                        };
-                    }
+                    return this._buildHoverprovider(position, editor, tabSize);
                 }
-            });
+            }
+        );
+    }
+
+    _buildHoverprovider(position: Position, editor: TextEditor,
+                        tabSize: number) {
+        let char = this._rangeAtThisLineMaker.start.character
+        if(position.character > char -2
+           && position.character < char +2
+           && position.line > this._firstLine
+           && position.line < this._lastLine) {
+            return {
+                range: this._rangeAtThisLineMaker,
+                contents: [
+                    {
+                        language: editor.document.languageId,
+                        value: this._buildHoverString(editor, tabSize)
+                    }
+                ]
+            };
+        }
     }
 
     _buildHoverString(editor: TextEditor, tabSize: number): string {
         let hoverLines = [];
-        let forwardHoverLines = [];
-        let backHoverLines = [];
         let document = editor.document;
-        let refDepth = this._getLinesIndentDepth(document.lineAt(this._firstLine), tabSize);
-        if(this._hoverConf.peekBack) {
-            let firstPeekLine = Math.max(this._firstLine - (this._hoverConf.peekBack - 1), 1);
+        let refDepth = this._getLinesIndentDepth(
+            document.lineAt(this._firstLine), tabSize);
+
+        let backHoverLines = this._peekBack(editor.document, tabSize, refDepth);
+        let forwardHoverLines = this._peekForward(editor.document, tabSize, refDepth);
+
+        hoverLines.push(...backHoverLines);
+        if(forwardHoverLines.length > 0 || backHoverLines.length > 0) {
+            hoverLines.push(this._buildHoverPlaceholder(editor, tabSize));
+        }
+        hoverLines.push(...forwardHoverLines);
+        return hoverLines.join('\n');
+    }
+
+    _buildHoverPlaceholder(editor: TextEditor, tabSize: number): string {
+        let tabChar = editor.options.insertSpaces?' ':'\t';
+        let spacing = tabChar.repeat(tabSize);
+        return `${spacing}${this._hoverConf.peekBlockPlaceholder}`;
+    }
+
+    _peekBack(document: TextDocument, tabSize: number,
+              refDepth: number): Array<string> {
+        let backHoverLines = [];
+        if(this._hoverConf.peekBack > 0) {
+            let firstPeekLine = Math.max(
+                this._firstLine - (this._hoverConf.peekBack - 1), 1);
             let pushedOnce = false;
             for(let i = firstPeekLine; i <= this._firstLine; i++) {
                 let line = document.lineAt(i)
                 let lineStr = line.text.trim();
-                if(!pushedOnce && lineStr.length < this._hoverConf.trimLinesShorterThan) {
+                if(!pushedOnce &&
+                   lineStr.length < this._hoverConf.trimLinesShorterThan) {
                     continue;
                 }
                 let lineDepth = this._getLinesIndentDepth(line, tabSize);
@@ -201,13 +239,22 @@ export class IndentSpy {
                 pushedOnce = true;
             }
         }
-        if(this._hoverConf.peekForward) {
-            let lastPeekLine = Math.min(this._lastLine + (this._hoverConf.peekForward - 1), document.lineCount);
+        return backHoverLines;
+    }
+
+    _peekForward(document: TextDocument, tabSize: number,
+                 refDepth: number): Array<string> {
+        let forwardHoverLines = [];
+        if(this._hoverConf.peekForward > 0) {
+            let lastPeekLine = Math.min(
+                this._lastLine + (this._hoverConf.peekForward - 1),
+                document.lineCount);
             let pushedOnce = false;
             for(let i = lastPeekLine; i >= this._lastLine; i--) {
                 let line = document.lineAt(i)
                 let lineStr = line.text.trim();
-                if(!pushedOnce && lineStr.length < this._hoverConf.trimLinesShorterThan) {
+                if(!pushedOnce &&
+                   lineStr.length < this._hoverConf.trimLinesShorterThan) {
                     continue;
                 }
                 let lineDepth = this._getLinesIndentDepth(line, tabSize);
@@ -219,13 +266,7 @@ export class IndentSpy {
                 pushedOnce = true;
             }
         }
-        hoverLines.push(...backHoverLines);
-        if(forwardHoverLines.length > 0 || backHoverLines.length > 0) {
-            let tabChar = editor.options.insertSpaces?' ':'\t';
-            hoverLines.push(`${tabChar.repeat(tabSize)}${this._hoverConf.peekBlockPlaceholder}`);
-        }
-        hoverLines.push(...forwardHoverLines.reverse());
-        return hoverLines.join('\n');
+        return forwardHoverLines.reverse();
     }
 
     _clearDecorators() {
@@ -284,7 +325,7 @@ export class IndentSpy {
         }
         let selectedIndentPos = (selectedIndent - 1) * tabSize;
         let activeRanges = [];
-        this._firstLine = selection.start.line;
+        let firstLine = selection.start.line;
         this._lastLine = selection.start.line;
         // add ranges for selected block
         for(let i = selection.start.line; i <= selection.end.line; i++) {
@@ -298,6 +339,7 @@ export class IndentSpy {
             if(lineIndent >= selectedIndent || (line.isEmptyOrWhitespace && selectedIndent == 1)) {
                 activeRanges.push(this._createIndicatorRange(i, selectedIndentPos));
             } else if(!line.isEmptyOrWhitespace) {
+
                 this._firstLine = i;
                 break;
             }
