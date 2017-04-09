@@ -181,15 +181,19 @@ export class IndentSpy {
            && position.character < char +2
            && position.line > this._firstLine
            && position.line < this._lastLine) {
-            return {
-                range: this._rangeAtThisLineMaker,
-                contents: [
-                    {
-                        language: editor.document.languageId,
-                        value: this._buildHoverString(editor, tabSize)
-                    }
-                ]
-            };
+            let str = this._buildHoverString(editor, tabSize);
+            if(str) {
+                return {
+                    range: this._rangeAtThisLineMaker,
+                    contents: [
+                        {
+                            language: editor.document.languageId,
+                            value: str
+                        }
+                    ]
+                };
+            }
+            return null;
         }
     }
 
